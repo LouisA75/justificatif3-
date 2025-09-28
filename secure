@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<meta charset="utf-8">
+<meta http-equiv="Cache-Control" content="no-store, max-age=0, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture sécurisée (15s)</title>
+
+<style>
+  html,body{margin:0;height:100%;background:#111;color:#eee;font:16px/1.4 system-ui}
+  #wrap{display:flex;flex-direction:column;height:100%}
+  header{padding:12px 16px;background:#181818;display:flex;gap:8px;align-items:center}
+  #pw{flex:1;max-width:420px;padding:8px;border:1px solid #333;background:#0c0c0c;color:#eee}
+  #go{padding:8px 12px;background:#2b6;width:160px;border:0;border-radius:6px;color:#fff;cursor:pointer}
+  #timer{margin-left:auto;color:#bbb}
+  #status{padding:8px 16px;color:#bbb}
+  main{flex:1;display:flex;align-items:center;justify-content:center}
+  canvas{max-width:100%;height:auto;background:#000}
+  /* anti impression */
+  @media print { body{display:none !important} }
+</style>
+
+<div id="wrap">
+  <header>
+    <input id="pw" type="password" placeholder="Mot de passe du .gpg" autofocus>
+    <button id="go">Ouvrir (15s)</button>
+    <span id="timer"></span>
+  </header>
+  <div id="status"></div>
+  <main><canvas id="pdfc"></canvas></main>
+</div>
+
+<!-- OpenPGP.js (binaire) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.11.2/openpgp.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<!-- PDF.js UMD + worker -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.js"></script>
+<script>
+  // PDF.js worker (obligatoire)
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.js";
+</script>
+
+<script>
+(() => {
+  // On attend un lien du type:  /index.html?token=XXXX
+  const qs = new URLSearchParams(location.search);
+  const token = qs.get('token') || '';   // pour lien à usage unique côté serveur
+  const status = (msg) => document.getElementById('status').textContent = msg;
+
+  // Blocages basiques (pas infaillible mais dissuasif)
+  window.addEventListener('contextmenu', e => e.preventDefault());
+  window.addEventListener('keydown', e => {
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey||e.metaKey) && (k==='s'||k==='p')) e.preventDefault();
+  });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { try{document.body.innerHTML='';}catch{}; window.close(); location.replace('about:blank'); }});
+
+  // Compte à rebours 15s puis purge+fermeture
+  let secs = 15, tmr = null;
+  function startTimer(cleanup) {
+    const el = document.getElementById('timer');
+    el.textContent = `Auto-fermeture dans ${secs}s`;
+    tmr = setInterval(() => {
+      secs--; el.textContent = `Auto-fermeture dans ${secs}s`;
+      if (secs <= 0) {
+        clearInterval(tmr);
+        try { cleanup && cleanup(); } catch {}
+        try { document.body.innerHTML=''; } catch {}
+        window.close(); location.replace('about:blank');
+      }
+    }, 1000);
+  }
+
+  async function fetchEncrypted() {
+    const url = token ? `/file.gpg?token=${encodeURIComponent(token)}` : `/encrypted.pdf.gpg`;
+    const res = await fetch(url, { cache:'no-store', headers:{'Cache-Control':'no-store'} });
+    if (!res.ok) throw new Error(`Chargement impossible (HTTP ${res.status})`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
+  async function decrypt(encBytes, passphrase) {
+    const msg = await openpgp.readMessage({ binaryMessage: encBytes });
+    const { data } = await openpgp.decrypt({ message: msg, passwords: [passphrase], format: 'binary' });
+    return new Uint8Array(data); // PDF brut
+  }
+
+  async function render(pdfBytes) {
+    const pdf = await pdfjsLib.getDocument({ data: pdfBytes, disableFontFace:true }).promise;
+    const page = await pdf.getPage(1);
+    const canvas = document.getElementById('pdfc');
+    const ctx = canvas.getContext('2d', { alpha:false });
+    const vp = page.getViewport({ scale: 1.5 });
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({ canvasContext: ctx, viewport: vp, intent:'display' }).promise;
+    // On détruit les refs PDF.js
+    try { page._destroy && page._destroy(); } catch {}
+    try { pdf.destroy && pdf.destroy(); } catch {}
+  }
+
+  async function openOnce() {
+    const pass = document.getElementById('pw').value;
+    if (!pass) { status('Entrez le mot de passe.'); return; }
+    try {
+      status('Téléchargement sécurisé…');
+      const enc = await fetchEncrypted();
+      status('Déchiffrement…');
+      const pdf = await decrypt(enc, pass);
+      // purge immédiate du chiffré
+      enc.fill(0);
+      status('Affichage (15s)…');
+      await render(pdf);
+      // purge du déchiffré
+      pdf.fill(0);
+      // compte à rebours + purge finale
+      startTimer(() => { try{document.getElementById('pdfc').width=1;document.getElementById('pdfc').height=1;}catch{} });
+    } catch (e) {
+      console.error(e);
+      status('Échec : mot de passe invalide ou lien expiré.');
+    }
+  }
+
+  document.getElementById('go').addEventListener('click', openOnce);
+})();
+</script>
+</html>
