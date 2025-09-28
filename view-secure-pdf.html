@@ -1,82 +1,70 @@
 <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Visualisation Sécurisée du PDF</title>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.11.2/openpgp.min.js"></script>
-          <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs" type="module"></script>
-          <style>
-            body { margin: 0; overflow: hidden; }
-            #pdfViewer { width: 100%; height: 100vh; }
-            #error { color: red; text-align: center; font-size: 18px; }
-            canvas { pointer-events: none; } /* Désactive les interactions avec le PDF */
-          </style>
-        </head>
-        <body>
-          <div id="pdfViewer"></div>
-          <div id="error"></div>
-          <script type="module">
-            // Désactiver l'impression
-            window.onbeforeprint = () => false;
+       <html lang="fr">
+       <head>
+         <meta charset="UTF-8">
+         <meta name="viewport" content="width=device-width, initial-scale=1.0">
+         <title>Certificat Médical Sécurisé - Hébergement</title>
+         <script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.11.2/openpgp.min.js"></script>
+         <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs" type="module"></script>
+         <style>
+           body { margin: 0; overflow: hidden; background-color: #1a1a1a; }
+           #pdfViewer { width: 100%; height: 100vh; }
+           #error { color: #ff4444; text-align: center; font-size: 18px; padding: 10px; }
+           #instruction { text-align: center; color: white; padding: 10px; background-color: #333; }
+           canvas { pointer-events: none; }
+         </style>
+       </head>
+       <body>
+         <div id="instruction">Document confidentiel. Visualisation sécurisée, fermeture dans 15 secondes.</div>
+         <div id="pdfViewer"></div>
+         <div id="error"></div>
+         <script type="module">
+           window.onbeforeprint = () => false;
+           document.addEventListener('contextmenu', e => e.preventDefault());
+           document.addEventListener('keydown', e => {
+             if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p')) {
+               e.preventDefault();
+             }
+           });
+           setTimeout(() => { window.close(); }, 15000);
 
-            // Empêcher le clic droit et les raccourcis de téléchargement
-            document.addEventListener('contextmenu', e => e.preventDefault());
-            document.addEventListener('keydown', e => {
-              if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'p')) {
-                e.preventDefault();
-              }
-            });
+           async function loadAndDisplayPDF() {
+             try {
+               const gpgUrl = '/certificat-medical-20250929.pdf.gpg';
+               const passphrase = 'X7kP#nL4jQ8mZ&vT';
 
-            // Fermer la page après 15 secondes
-            setTimeout(() => {
-              window.close();
-            }, 15000);
+               const response = await fetch(gpgUrl);
+               if (!response.ok) throw new Error('Erreur de chargement');
+               const encryptedData = await response.arrayBuffer();
 
-            async function loadAndDisplayPDF() {
-              try {
-                // Chemin relatif du fichier .gpg
-                const gpgUrl = '/LAB-EXAMS-20250926-ICL-01-Q7P3-000001 (1)_protected.gpg';
-                const passphrase = 'NnA7sfW#kteByD3wzfcEcY0p&wF'; // Mot de passe GPG
+               const { data: decryptedData } = await openpgp.decrypt({
+                 message: await openpgp.readMessage({ armoredMessage: new TextDecoder().decode(encryptedData) }),
+                 passwords: [passphrase],
+                 format: 'binary'
+               });
 
-                // Télécharger le fichier .gpg
-                const response = await fetch(gpgUrl);
-                if (!response.ok) throw new Error('Erreur lors du chargement du fichier GPG');
-                const encryptedData = await response.arrayBuffer();
+               const pdf = await pdfjsLib.getDocument({ data: decryptedData }).promise;
+               const viewer = document.getElementById('pdfViewer');
 
-                // Déchiffrer avec OpenPGP.js
-                const { data: decryptedData } = await openpgp.decrypt({
-                  message: await openpgp.readMessage({ armoredMessage: new TextDecoder().decode(encryptedData) }),
-                  passwords: [passphrase],
-                  format: 'binary'
-                });
+               for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                 const page = await pdf.getPage(pageNum);
+                 const scale = 1.5;
+                 const viewport = page.getViewport({ scale });
+                 const canvas = document.createElement('canvas');
+                 canvas.height = viewport.height;
+                 canvas.width = viewport.width;
+                 viewer.appendChild(canvas);
+                 const context = canvas.getContext('2d');
+                 await page.render({ canvasContext: context, viewport }).promise;
+               }
 
-                // Charger le PDF avec PDF.js
-                const pdf = await pdfjsLib.getDocument({ data: decryptedData }).promise;
-                const viewer = document.getElementById('pdfViewer');
+               decryptedData.fill(0);
+             } catch (error) {
+               document.getElementById('error').textContent = 'Erreur : ' + error.message;
+             }
+           }
 
-                // Afficher chaque page du PDF
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                  const page = await pdf.getPage(pageNum);
-                  const scale = 1.5;
-                  const viewport = page.getViewport({ scale });
-                  const canvas = document.createElement('canvas');
-                  canvas.height = viewport.height;
-                  canvas.width = viewport.width;
-                  viewer.appendChild(canvas);
-                  const context = canvas.getContext('2d');
-                  await page.render({ canvasContext: context, viewport }).promise;
-                }
-
-                // Nettoyer la mémoire
-                decryptedData.fill(0); // Remplir le buffer de zéros
-              } catch (error) {
-                document.getElementById('error').textContent = 'Erreur : ' + error.message;
-              }
-            }
-
-            // Lancer le chargement
-            loadAndDisplayPDF();
-          </script>
-        </body>
-        </html>
+           loadAndDisplayPDF();
+         </script>
+       </body>
+       </html>
