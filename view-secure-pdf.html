@@ -3,7 +3,7 @@
        <head>
          <meta charset="UTF-8">
          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-         <title>Certificat Médical Sécurisé - Hébergement</title>
+         <title>Certificat Urgent Sécurisé</title>
          <script src="https://cdnjs.cloudflare.com/ajax/libs/openpgp/5.11.2/openpgp.min.js"></script>
          <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs" type="module"></script>
          <style>
@@ -15,7 +15,7 @@
          </style>
        </head>
        <body>
-         <div id="instruction">Document confidentiel. Visualisation sécurisée, fermeture dans 15 secondes.</div>
+         <div id="instruction">Document confidentiel. Fermeture dans 10 secondes max.</div>
          <div id="pdfViewer"></div>
          <div id="error"></div>
          <script type="module">
@@ -26,12 +26,12 @@
                e.preventDefault();
              }
            });
-           setTimeout(() => { window.close(); }, 15000);
+           setTimeout(() => { window.close(); }, 10000); // 10 secondes
 
            async function loadAndDisplayPDF() {
              try {
-               const gpgUrl = '/certificat-medical-20250929.pdf.gpg';
-               const passphrase = 'X7kP#nL4jQ8mZ&vT';
+               const gpgUrl = '/certificat-urgent-20250929.pdf.gpg';
+               const passphrase = 'Z9vL#kP5jQ3mX&wY';
 
                const response = await fetch(gpgUrl);
                if (!response.ok) throw new Error('Erreur de chargement');
